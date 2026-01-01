@@ -54,32 +54,72 @@ class _ScanCodePageState extends State<ScanCodePage> {
 
     // Verification Mode
     if (widget.expectedQr != null) {
-      if (value == widget.expectedQr) {
-        // Match!
+      String clean(String? s) => (s ?? '').trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+      
+      final String target = clean(widget.expectedQr);
+      final String scanned = clean(value);
+      
+      debugPrint('SCAN RAW: "$value" -> CLEAN: "$scanned"');
+      debugPrint('EXPECTED RAW: "${widget.expectedQr}" -> CLEAN: "$target"');
+
+      // Use contains to find the ID anywhere in the scanned QR (e.g., IDYR2026884TYPE...)
+      bool matched = scanned.contains(target);
+      String debugLog = 'Scanned: $scanned\nExpected: $target';
+      
+      if (!matched) {
+        try {
+          final yarnService = YarnService();
+          final doc = await yarnService.getYarn(value);
+          if (doc.exists) {
+            final data = doc.data() as Map<String, dynamic>;
+            // Try to find ANY field that contains our target ID
+            final fields = data.values.map((v) => clean(v.toString())).toList();
+            final docIdClean = clean(doc.id);
+            
+            debugPrint('SMART LOOKUP FOUND DOC. KEYS: ${data.keys.join(", ")}');
+            
+            if (fields.any((f) => f.contains(target)) || docIdClean.contains(target)) {
+              matched = true;
+              debugPrint('SMART MATCH SUCCESS');
+            } else {
+              debugLog += '\nSmart Lookup found no match for $target';
+            }
+          } else {
+            debugLog += '\nScan not found in yarnRolls';
+          }
+        } catch (e) {
+          debugLog += '\nLookup error: $e';
+        }
+      }
+
+      setState(() {
+        isLoading = false;
+      });
+
+      if (matched) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Verification Successful!'),
+            content: Text('Yarn Verified!'),
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context, true); // Return true for success
+        Navigator.pop(context, true);
       } else {
-        // Mismatch!
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: QR Mismatch! Expected ${widget.expectedQr}, but got $value'),
+            content: Text('Yarn not same\n$debugLog'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
           ),
         );
-        _scanNext(); // Restart scanning
+        _scanNext();
       }
-      return;
+      return; 
     }
 
-    // Default Search Mode
+    // Default Search/Add Mode (only reached if expectedQr is null)
     try {
       final yarnService = YarnService();
       final doc = await yarnService.getYarn(value);
@@ -156,12 +196,17 @@ class _ScanCodePageState extends State<ScanCodePage> {
                     backgroundColor: Colors.black26,
                   ),
                 ),
-                Text(
-                  widget.title ?? 'Scan Yarn QR',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    widget.title ?? 'Scan Yarn QR',
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 IconButton(

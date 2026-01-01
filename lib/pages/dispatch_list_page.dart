@@ -21,15 +21,55 @@ class DispatchListPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
           final docs = snapshot.data?.docs ?? [];
 
           if (docs.isEmpty) {
-            return const Center(
-              child: Text('No yarn ready for dispatch.'),
+            return StreamBuilder<QuerySnapshot>(
+              stream: yarnService.getAnyReserved(),
+              builder: (ctx, anySnapshot) {
+                final anyDocs = anySnapshot.data?.docs ?? [];
+                
+                return Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.local_shipping_outlined, size: 80, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No Yarn Ready for Dispatch',
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Checking "reserved_collection" for "moved" or "MOVED" state.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 32),
+                        if (anyDocs.isNotEmpty) ...[
+                          const Divider(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Found ${anyDocs.length} total docs in collection.',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text('Actual data in Firestore:', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          ...anyDocs.take(5).map((d) {
+                            final data = d.data() as Map<String, dynamic>;
+                            final stateKey = data.keys.firstWhere((k) => k.toLowerCase() == 'state', orElse: () => '');
+                            final s = stateKey.isNotEmpty ? data[stateKey] : 'null';
+                            return Text('ID: ${d.id} | STATE: $s', style: const TextStyle(fontSize: 10));
+                          }),
+                        ]
+                      ],
+                    ),
+                  ),
+                );
+              }
             );
           }
 
@@ -39,39 +79,101 @@ class DispatchListPage extends StatelessWidget {
             itemBuilder: (context, index) {
               final doc = docs[index];
               final data = doc.data() as Map<String, dynamic>;
-              final yarnId = data['id'] ?? 'Unknown ID';
-              final qrCode = data['qrCode'] ?? '';
+              
+              final yarnId = data['id'] ?? data['yarnId'] ?? data['ID'] ?? doc.id;
+              final qrCode = data['qrCode'] ?? data['qr'] ?? data['QR'] ?? '';
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 2,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  title: Text(
-                    'Yarn ID: $yarnId',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                  subtitle: const Padding(
-                    padding: EdgeInsets.only(top: 4.0),
-                    child: Text('Ready for Dispatch'),
-                  ),
-                  trailing: const Icon(Icons.check_circle_outline, color: Colors.green),
-                  onTap: () async {
-                    final success = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ScanCodePage(
-                          expectedQr: qrCode,
-                          title: 'Verify Dispatch - Scan $yarnId',
-                        ),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                    );
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.local_shipping, size: 32, color: Colors.teal),
+                              const SizedBox(width: 15),
+                              Text(
+                                '$yarnId',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold, 
+                                  fontSize: 24,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 25),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final scanSuccess = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ScanCodePage(
+                                      expectedQr: yarnId.toString(),
+                                      title: 'Verify Dispatch - $yarnId',
+                                    ),
+                                  ),
+                                );
 
-                    if (success == true) {
-                      await yarnService.updateYarnStatus(doc.id, 'dispatched');
-                    }
-                  },
+                                if (scanSuccess == true) {
+                                  if (!context.mounted) return;
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Confirm Dispatch'),
+                                      content: Text('Final step: Dispatch Yarn $yarnId?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                                          child: const Text('CONFIRM'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  if (confirmed == true) {
+                                    await yarnService.updateYarnStatus(doc.id, 'dispatched');
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.local_shipping),
+                              label: const Text('VERIFY & DISPATCH'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal,
+                                padding: const EdgeInsets.symmetric(vertical: 20),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },

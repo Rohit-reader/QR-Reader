@@ -13,22 +13,31 @@ class YarnService {
   }
 
   Future<DocumentSnapshot> getYarn(String qr) {
-    return _db.collection('yarns').doc(_getSafeId(qr)).get();
+    return _db.collection('yarnRolls').doc(_getSafeId(qr)).get();
   }
 
   // --- Reserved Collection Methods ---
 
   Stream<QuerySnapshot> getReservedYarns() {
-    return _db.collection('reserved').where('status', isEqualTo: 'reserved').snapshots();
+    return _db.collection('reserved_collection')
+        .where('state', whereIn: ['reserved', 'RESERVED'])
+        .snapshots();
+  }
+
+  // DEBUG: Get everything to see what's actually in there
+  Stream<QuerySnapshot> getAnyReserved() {
+    return _db.collection('reserved_collection').snapshots();
   }
 
   Stream<QuerySnapshot> getMovedYarns() {
-    return _db.collection('reserved').where('status', isEqualTo: 'moved').snapshots();
+    return _db.collection('reserved_collection')
+        .where('state', whereIn: ['moved', 'MOVED'])
+        .snapshots();
   }
 
   Future<void> updateYarnStatus(String docId, String newStatus) {
-    return _db.collection('reserved').doc(docId).update({
-      'status': newStatus,
+    return _db.collection('reserved_collection').doc(docId).update({
+      'state': newStatus,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -39,7 +48,7 @@ class YarnService {
       ...data,
       'rawQr': qr.trim(),
     };
-    return _db.collection('yarns').doc(_getSafeId(qr)).set(fullData);
+    return _db.collection('yarnRolls').doc(_getSafeId(qr)).set(fullData);
   }
 
   Future<void> deleteYarn(String qr) {
