@@ -6,7 +6,10 @@ import './add_yarn_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ScanCodePage extends StatefulWidget {
-  const ScanCodePage({super.key});
+  final String? expectedQr;
+  final String? title;
+
+  const ScanCodePage({super.key, this.expectedQr, this.title});
 
   @override
   State<ScanCodePage> createState() => _ScanCodePageState();
@@ -49,6 +52,34 @@ class _ScanCodePageState extends State<ScanCodePage> {
 
     controller?.stop();
 
+    // Verification Mode
+    if (widget.expectedQr != null) {
+      if (value == widget.expectedQr) {
+        // Match!
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification Successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true); // Return true for success
+      } else {
+        // Mismatch!
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: QR Mismatch! Expected ${widget.expectedQr}, but got $value'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        _scanNext(); // Restart scanning
+      }
+      return;
+    }
+
+    // Default Search Mode
     try {
       final yarnService = YarnService();
       final doc = await yarnService.getYarn(value);
@@ -125,9 +156,9 @@ class _ScanCodePageState extends State<ScanCodePage> {
                     backgroundColor: Colors.black26,
                   ),
                 ),
-                const Text(
-                  'Scan Yarn QR',
-                  style: TextStyle(
+                Text(
+                  widget.title ?? 'Scan Yarn QR',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,

@@ -16,6 +16,23 @@ class YarnService {
     return _db.collection('yarns').doc(_getSafeId(qr)).get();
   }
 
+  // --- Reserved Collection Methods ---
+
+  Stream<QuerySnapshot> getReservedYarns() {
+    return _db.collection('reserved').where('status', isEqualTo: 'reserved').snapshots();
+  }
+
+  Stream<QuerySnapshot> getMovedYarns() {
+    return _db.collection('reserved').where('status', isEqualTo: 'moved').snapshots();
+  }
+
+  Future<void> updateYarnStatus(String docId, String newStatus) {
+    return _db.collection('reserved').doc(docId).update({
+      'status': newStatus,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> addYarn(String qr, Map<String, dynamic> data) {
     // We also store the raw QR inside the document for reference
     final fullData = {
