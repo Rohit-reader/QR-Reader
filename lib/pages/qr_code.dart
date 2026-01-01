@@ -59,9 +59,6 @@ class _ScanCodePageState extends State<ScanCodePage> {
       final String target = clean(widget.expectedQr);
       final String scanned = clean(value);
       
-      debugPrint('SCAN RAW: "$value" -> CLEAN: "$scanned"');
-      debugPrint('EXPECTED RAW: "${widget.expectedQr}" -> CLEAN: "$target"');
-
       // Use contains to find the ID anywhere in the scanned QR (e.g., IDYR2026884TYPE...)
       bool matched = scanned.contains(target);
       String debugLog = 'Scanned: $scanned\nExpected: $target';
@@ -76,11 +73,8 @@ class _ScanCodePageState extends State<ScanCodePage> {
             final fields = data.values.map((v) => clean(v.toString())).toList();
             final docIdClean = clean(doc.id);
             
-            debugPrint('SMART LOOKUP FOUND DOC. KEYS: ${data.keys.join(", ")}');
-            
             if (fields.any((f) => f.contains(target)) || docIdClean.contains(target)) {
               matched = true;
-              debugPrint('SMART MATCH SUCCESS');
             } else {
               debugLog += '\nSmart Lookup found no match for $target';
             }
@@ -108,10 +102,10 @@ class _ScanCodePageState extends State<ScanCodePage> {
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Yarn not same\n$debugLog'),
+          const SnackBar(
+            content: Text('Yarn not same'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: Duration(seconds: 2),
           ),
         );
         _scanNext();
@@ -122,11 +116,11 @@ class _ScanCodePageState extends State<ScanCodePage> {
     // Default Search/Add Mode (only reached if expectedQr is null)
     try {
       final yarnService = YarnService();
-      final doc = await yarnService.getYarn(value);
+      final doc = await yarnService.findYarnByContent(value);
 
       if (!mounted) return;
 
-      if (doc.exists) {
+      if (doc != null && doc.exists) {
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -137,10 +131,14 @@ class _ScanCodePageState extends State<ScanCodePage> {
           ),
         ).then((_) => _scanNext());
       } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => AddYarnPage(qr: value)),
-        ).then((_) => _scanNext());
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('QR code is invalid'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        _scanNext();
       }
     } catch (e) {
       if (!mounted) return;

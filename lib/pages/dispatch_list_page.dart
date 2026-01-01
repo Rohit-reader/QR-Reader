@@ -12,6 +12,7 @@ class DispatchListPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: const Text('Move Yarn (Dispatch)'),
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -24,52 +25,24 @@ class DispatchListPage extends StatelessWidget {
           final docs = snapshot.data?.docs ?? [];
 
           if (docs.isEmpty) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: yarnService.getAnyReserved(),
-              builder: (ctx, anySnapshot) {
-                final anyDocs = anySnapshot.data?.docs ?? [];
-                
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.local_shipping_outlined, size: 80, color: Colors.grey[400]),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No Yarn Ready for Dispatch',
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Checking "reserved_collection" for "moved" or "MOVED" state.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 32),
-                        if (anyDocs.isNotEmpty) ...[
-                          const Divider(),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Found ${anyDocs.length} total docs in collection.',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text('Actual data in Firestore:', style: TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          ...anyDocs.take(5).map((d) {
-                            final data = d.data() as Map<String, dynamic>;
-                            final stateKey = data.keys.firstWhere((k) => k.toLowerCase() == 'state', orElse: () => '');
-                            final s = stateKey.isNotEmpty ? data[stateKey] : 'null';
-                            return Text('ID: ${d.id} | STATE: $s', style: const TextStyle(fontSize: 10));
-                          }),
-                        ]
-                      ],
-                    ),
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.local_shipping_outlined, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Yarn Ready for Dispatch',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                );
-              }
+                  const SizedBox(height: 8),
+                  Text(
+                    textAlign: TextAlign.center,
+                    'All items have been dispatched or none are ready.',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                  ),
+                ],
+              ),
             );
           }
 

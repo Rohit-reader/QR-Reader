@@ -119,7 +119,7 @@ class WelcomePage extends StatelessWidget {
                   icon: const Icon(Icons.qr_code_scanner),
                   label: const Text('Direct Inventory Scan'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[800],
+                    backgroundColor: Colors.purple,
                   ),
                 ),
               ],

@@ -12,7 +12,7 @@ class ReservedListPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reserved Yarn (Move)'),
+        title: const Text('Reserved Yarns'),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: yarnService.getReservedYarns(),
@@ -24,79 +24,24 @@ class ReservedListPage extends StatelessWidget {
           final docs = snapshot.data?.docs ?? [];
 
           if (docs.isEmpty) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: yarnService.getAnyReserved(),
-              builder: (ctx, anySnapshot) {
-                final anyDocs = anySnapshot.data?.docs ?? [];
-                
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey[400]),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No Reserved Yarn Found',
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Checking "reserved_collection" for "reserved" or "RESERVED" state.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 32),
-                        if (anyDocs.isNotEmpty) ...[
-                          const Divider(),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Found ${anyDocs.length} document(s) in collection.',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 16),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text('Actual data in Firestore:', style: TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          ...anyDocs.take(5).map((d) {
-                            final data = d.data() as Map<String, dynamic>;
-                            // Try to find state in any casing
-                            final stateKey = data.keys.firstWhere((k) => k.toLowerCase() == 'state', orElse: () => '');
-                            final s = stateKey.isNotEmpty ? data[stateKey] : 'null (Field "state" not found!)';
-                            
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.blue.withOpacity(0.2)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('ID: ${d.id}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                  Text('STATE FIELD: "$stateKey"', style: const TextStyle(color: Colors.blue, fontSize: 11)),
-                                  Text('STATE VALUE: "$s"', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 11)),
-                                  Text('ALL KEYS: ${data.keys.join(", ")}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                ],
-                              ),
-                            );
-                          }),
-                          const SizedBox(height: 16),
-                          const Divider(),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'TIP: The app is looking for "RESERVED" in the "state" field.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold),
-                          ),
-                        ]
-                      ],
-                    ),
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inventory_2_outlined, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Reserved Yarn Found',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
-                );
-              }
+                  const SizedBox(height: 8),
+                  Text(
+                    textAlign: TextAlign.center,
+                    'All items have been moved or none are reserved.',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
             );
           }
 

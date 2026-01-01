@@ -16,17 +16,53 @@ class YarnService {
     return _db.collection('yarnRolls').doc(_getSafeId(qr)).get();
   }
 
+  Future<DocumentSnapshot?> findYarnByContent(String content) async {
+    // Strategy 1: Direct Hash Lookup
+    try {
+      final doc = await getYarn(content);
+      if (doc.exists) return doc;
+    } catch (_) {}
+
+    // Strategy 2: Search by 'rawQr' field
+    final q1 = await _db.collection('yarnRolls')
+        .where('rawQr', isEqualTo: content.trim())
+        .limit(1)
+        .get();
+    if (q1.docs.isNotEmpty) return q1.docs.first;
+
+    // Strategy 3: Handle JSON-formatted QRs
+    try {
+      final decoded = json.decode(content);
+      if (decoded is Map<String, dynamic>) {
+        final possibleId = decoded['id'] ?? decoded['yarnId'] ?? decoded['ID'];
+        if (possibleId != null) {
+          // Try lookup by the ID found in JSON
+          final qJson = await _db.collection('yarnRolls')
+              .where('id', isEqualTo: possibleId.toString())
+              .limit(1)
+              .get();
+          if (qJson.docs.isNotEmpty) return qJson.docs.first;
+        }
+      }
+    } catch (_) {}
+
+    // Strategy 4: Fallback search for ID anywhere in fields
+    // (This is a bit broader but helps find items added via different methods)
+    final qAny = await _db.collection('yarnRolls')
+        .where('id', isEqualTo: content.trim())
+        .limit(1)
+        .get();
+    if (qAny.docs.isNotEmpty) return qAny.docs.first;
+
+    return null;
+  }
+
   // --- Reserved Collection Methods ---
 
   Stream<QuerySnapshot> getReservedYarns() {
     return _db.collection('reserved_collection')
         .where('state', whereIn: ['reserved', 'RESERVED'])
         .snapshots();
-  }
-
-  // DEBUG: Get everything to see what's actually in there
-  Stream<QuerySnapshot> getAnyReserved() {
-    return _db.collection('reserved_collection').snapshots();
   }
 
   Stream<QuerySnapshot> getMovedYarns() {
