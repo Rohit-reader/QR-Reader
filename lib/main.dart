@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:qr_reader/pages/qr_code.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const MyApp());
 }
 
@@ -17,9 +20,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
 
         // ✅ FIXED: Material 3 safe theme
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
 
         hintColor: Colors.grey[600],
         scaffoldBackgroundColor: Colors.grey[200],
@@ -61,10 +62,7 @@ class WelcomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('QRLizer'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('QRLizer'), centerTitle: true),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32.0),
