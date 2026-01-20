@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Yarn Roll',
+      title: 'Yarn Manager',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -73,56 +73,45 @@ class WelcomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Yarn Manager')),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Colors.white,
-            ],
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildMenuCard(
-                  context,
-                  title: 'Reserved List',
-                  subtitle: 'Move yarn from rack to floor',
-                  icon: Icons.inventory_2_outlined,
-                  color: const Color(0xFF673AB7),
-                  onTap: () => Navigator.pushNamed(context, '/reserved'),
-                ),
-                const SizedBox(height: 20),
-                _buildMenuCard(
-                  context,
-                  title: 'Dispatch List',
-                  subtitle: 'Verify and dispatch moved yarn',
-                  icon: Icons.local_shipping_outlined,
-                  color: const Color(0xFF00BFA5),
-                  onTap: () => Navigator.pushNamed(context, '/dispatch'),
-                ),
-                const SizedBox(height: 40),
-                const Divider(),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/scan_qr');
-                  },
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Direct Inventory Scan'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                  ),
-                ),
+    return SafeArea(
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Yarn Manager')),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.05),
+                Colors.white,
               ],
+            ),
+          ),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMenuCard(
+                    context,
+                    title: 'Reserved List',
+                    subtitle: 'Move yarn from rack to floor',
+                    icon: Icons.inventory_2_outlined,
+                    color: const Color(0xFF673AB7),
+                    onTap: () => Navigator.pushNamed(context, '/reserved'),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildMenuCard(
+                    context,
+                    title: 'Dispatch List',
+                    subtitle: 'Verify and dispatch moved yarn',
+                    icon: Icons.local_shipping_outlined,
+                    color: const Color(0xFF00BFA5),
+                    onTap: () => Navigator.pushNamed(context, '/dispatch'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -180,10 +169,7 @@ class WelcomePage extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
               ),

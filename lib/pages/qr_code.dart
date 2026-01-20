@@ -132,10 +132,15 @@ class _ScanCodePageState extends State<ScanCodePage> {
         ).then((_) => _scanNext());
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('QR code is invalid'),
+          SnackBar(
+            content: Text('Invalid QR: "$value"'),
             backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'INFO',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
         _scanNext();

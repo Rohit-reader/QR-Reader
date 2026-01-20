@@ -17,28 +17,31 @@ class YarnService {
   }
 
   Future<DocumentSnapshot?> findYarnByContent(String content) async {
-    // Strategy 1: Direct Hash Lookup
+    final raw = content.trim();
+    if (raw.isEmpty) return null;
+
+    // Strategy 1: Direct Hash Lookup (Original method)
     try {
-      final doc = await getYarn(content);
+      final doc = await getYarn(raw);
       if (doc.exists) return doc;
     } catch (_) {}
 
-    // Strategy 2: Search by 'rawQr' field
-    final q1 = await _db.collection('yarnRolls')
-        .where('rawQr', isEqualTo: content.trim())
+    // Strategy 2: Search by 'rawQr' field (Exact match)
+    final qRaw = await _db.collection('yarnRolls')
+        .where('rawQr', isEqualTo: raw)
         .limit(1)
         .get();
-    if (q1.docs.isNotEmpty) return q1.docs.first;
+    if (qRaw.docs.isNotEmpty) return qRaw.docs.first;
 
     // Strategy 3: Handle JSON-formatted QRs
     try {
-      final decoded = json.decode(content);
+      final decoded = json.decode(raw);
       if (decoded is Map<String, dynamic>) {
         final possibleId = decoded['id'] ?? decoded['yarnId'] ?? decoded['ID'];
         if (possibleId != null) {
-          // Try lookup by the ID found in JSON
+          final idStr = possibleId.toString().trim();
           final qJson = await _db.collection('yarnRolls')
-              .where('id', isEqualTo: possibleId.toString())
+              .where('id', isEqualTo: idStr)
               .limit(1)
               .get();
           if (qJson.docs.isNotEmpty) return qJson.docs.first;
@@ -46,13 +49,36 @@ class YarnService {
       }
     } catch (_) {}
 
-    // Strategy 4: Fallback search for ID anywhere in fields
-    // (This is a bit broader but helps find items added via different methods)
-    final qAny = await _db.collection('yarnRolls')
-        .where('id', isEqualTo: content.trim())
-        .limit(1)
-        .get();
-    if (qAny.docs.isNotEmpty) return qAny.docs.first;
+    // Strategy 4: Clean alphanumeric search against 'id'
+    // This helps if the QR is like "ID: YR12345" or "YR12345 (SILK)"
+    final cleanPattern = RegExp(r'[a-zA-Z0-9]{4,}'); // Look for alphanumeric strings of at least 4 chars
+    final matches = cleanPattern.allMatches(raw).map((m) => m.group(0)!).toList();
+    
+    for (final match in matches) {
+      final qMatch = await _db.collection('yarnRolls')
+          .where('id', isEqualTo: match)
+          .limit(1)
+          .get();
+      if (qMatch.docs.isNotEmpty) return qMatch.docs.first;
+    }
+
+    // Strategy 5: Part-based search
+    // Split by common delimiters and try each part
+    final parts = raw.split(RegExp(r'[:\s\-_/|,]')).where((p) => p.length >= 3).toList();
+    for (final part in parts) {
+      final pTrim = part.trim();
+      final qPart = await _db.collection('yarnRolls')
+          .where('id', isEqualTo: pTrim)
+          .limit(1)
+          .get();
+      if (qPart.docs.isNotEmpty) return qPart.docs.first;
+      
+      final qPartRaw = await _db.collection('yarnRolls')
+          .where('rawQr', isEqualTo: pTrim)
+          .limit(1)
+          .get();
+      if (qPartRaw.docs.isNotEmpty) return qPartRaw.docs.first;
+    }
 
     return null;
   }
