@@ -146,12 +146,19 @@ class _ScanCodePageState extends State<ScanCodePage> {
         transformedData.remove('isTest');
         
         // Change lot number from test lot to date-based lot number
-        if (transformedData.containsKey('lot') || transformedData.containsKey('lotNumber') || transformedData.containsKey('Lot_number')) {
-          final lotKey = transformedData.containsKey('lot') ? 'lot' : 
-                        transformedData.containsKey('lotNumber') ? 'lotNumber' : 'Lot_number';
+        String? lotKey;
+        // Find any key that contains "lot" (case-insensitive)
+        for (final key in transformedData.keys) {
+          if (key.toLowerCase().contains('lot')) {
+            lotKey = key;
+            break;
+          }
+        }
+
+        if (lotKey != null) {
           final currentLot = transformedData[lotKey]?.toString().toLowerCase() ?? '';
           if (currentLot.contains('test')) {
-            // Generate new lot number: LOT-YYYYMMDD-XXX format
+             // Generate new lot number: LOT-YYYYMMDD-XXX format
             final now = DateTime.now();
             final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
             final seqNum = now.millisecondsSinceEpoch.toString().substring(10); // Last 3 digits
