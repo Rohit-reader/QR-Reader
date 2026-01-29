@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/yarn_service.dart';
 import './yarn_detail_page.dart';
-import './add_yarn_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ScanCodePage extends StatefulWidget {
   final String? expectedQr;
   final String? title;
+  final bool isAddMode;
 
-  const ScanCodePage({super.key, this.expectedQr, this.title});
+  const ScanCodePage({
+    super.key,
+    this.expectedQr,
+    this.title,
+    this.isAddMode = false,
+  });
 
   @override
   State<ScanCodePage> createState() => _ScanCodePageState();
@@ -20,13 +25,15 @@ class _ScanCodePageState extends State<ScanCodePage> {
   MobileScannerController? controller;
   bool isScanning = true;
   bool isLoading = false;
+  Map<String, dynamic>? pendingData;
+  String? pendingQr;
 
   @override
   void initState() {
     super.initState();
     controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
-      returnImage: false,
+      returnImage: true, // Enable image capture for QR storage
     );
   }
 
@@ -37,126 +44,166 @@ class _ScanCodePageState extends State<ScanCodePage> {
   }
 
   void _handleScan(BarcodeCapture capture) async {
-    if (!isScanning || isLoading) return;
+    if (!isScanning || isLoading || pendingData != null) return;
 
     final rawValue = capture.barcodes.first.rawValue;
     if (rawValue == null || rawValue.trim().isEmpty) return;
 
     final value = rawValue.trim();
+    final qrImage = capture.image; // Capture QR image
 
     setState(() {
-      scannedData = value;
-      isScanning = false;
       isLoading = true;
     });
 
-    controller?.stop();
+    try {
+      final yarnService = YarnService();
+      Map<String, dynamic> data;
 
-    // Verification Mode
-    if (widget.expectedQr != null) {
-      String clean(String? s) => (s ?? '').trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
-      
-      final String target = clean(widget.expectedQr);
-      final String scanned = clean(value);
-      
-      // Use contains to find the ID anywhere in the scanned QR (e.g., IDYR2026884TYPE...)
-      bool matched = scanned.contains(target);
-      String debugLog = 'Scanned: $scanned\nExpected: $target';
-      
-      if (!matched) {
-        try {
-          final yarnService = YarnService();
-          final doc = await yarnService.getYarn(value);
-          if (doc.exists) {
-            final data = doc.data() as Map<String, dynamic>;
-            // Try to find ANY field that contains our target ID
-            final fields = data.values.map((v) => clean(v.toString())).toList();
-            final docIdClean = clean(doc.id);
-            
-            if (fields.any((f) => f.contains(target)) || docIdClean.contains(target)) {
-              matched = true;
-            } else {
-              debugLog += '\nSmart Lookup found no match for $target';
-            }
-          } else {
-            debugLog += '\nScan not found in yarnRolls';
+      if (widget.isAddMode) {
+        data = yarnService.parseYarnData(value);
+        // Store QR image as base64 if available
+        if (qrImage != null) {
+          data['qrImage'] = Blob(qrImage);
+        }
+      } else {
+        final doc = await yarnService.findYarnByContent(value);
+        if (doc != null && doc.exists) {
+          data = doc.data() as Map<String, dynamic>;
+        } else {
+          data = yarnService.parseYarnData(value);
+          // Flag it as not found if searching
+          if (widget.expectedQr != null || !widget.isAddMode) {
+             data['notFound'] = true;
           }
-        } catch (e) {
-          debugLog += '\nLookup error: $e';
         }
       }
 
       setState(() {
+        pendingData = data;
+        pendingQr = value;
+        isScanning = false;
         isLoading = false;
       });
+      controller?.stop();
+    } catch (e) {
+      debugPrint('Error parsing scan: $e');
+      setState(() => isLoading = false);
+    }
+  }
 
-      if (matched) {
+  void _confirmAction() async {
+    if (pendingData == null || pendingQr == null) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      final yarnService = YarnService();
+      final value = pendingQr!;
+      final data = pendingData!;
+
+      // 1. Verification Mode
+      if (widget.expectedQr != null) {
+        String clean(String? s) => (s ?? '').trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+        final String target = clean(widget.expectedQr);
+        final String scanned = clean(value);
+        
+        bool matched = scanned.contains(target);
+        if (!matched) {
+          final fields = data.values.map((v) => clean(v.toString())).toList();
+          final docIdClean = clean(data['id']?.toString() ?? '');
+          if (fields.any((f) => f.contains(target)) || docIdClean.contains(target)) {
+            matched = true;
+          }
+        }
+
+        if (matched) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Yarn Verified!'), backgroundColor: Colors.green),
+          );
+          Navigator.pop(context, true);
+          return;
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Yarn not same'), backgroundColor: Colors.red),
+          );
+          _resetScan();
+          return;
+        }
+      }
+
+      // 2. Add Mode
+      if (widget.isAddMode) {
+        // Prepare data for addition
+        final transformedData = Map<String, dynamic>.from(data);
+        
+        // Set state to "IN STOCK"
+        transformedData['state'] = 'IN STOCK';
+        
+        // Remove isTest key
+        transformedData.remove('isTest');
+        
+        // Change lot number from test lot to date-based lot number
+        if (transformedData.containsKey('lot') || transformedData.containsKey('lotNumber') || transformedData.containsKey('Lot_number')) {
+          final lotKey = transformedData.containsKey('lot') ? 'lot' : 
+                        transformedData.containsKey('lotNumber') ? 'lotNumber' : 'Lot_number';
+          final currentLot = transformedData[lotKey]?.toString().toLowerCase() ?? '';
+          if (currentLot.contains('test')) {
+            // Generate new lot number: LOT-YYYYMMDD-XXX format
+            final now = DateTime.now();
+            final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+            final seqNum = now.millisecondsSinceEpoch.toString().substring(10); // Last 3 digits
+            transformedData[lotKey] = 'LOT-$dateStr-$seqNum';
+          }
+        }
+        
+        // Set order_id to "ORD-NONE"
+        transformedData['order_id'] = 'ORD-NONE';
+        
+        await yarnService.addYarn(value, transformedData);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Yarn Verified!'),
+          SnackBar(
+            content: Text('Yarn ${transformedData['id'] ?? ''} added successfully'),
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context, true);
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Yarn not same'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
-        );
-        _scanNext();
+        Navigator.pop(context);
+        return;
       }
-      return; 
-    }
 
-    // Default Search/Add Mode (only reached if expectedQr is null)
-    try {
-      final yarnService = YarnService();
-      final doc = await yarnService.findYarnByContent(value);
-
-      if (!mounted) return;
-
-      if (doc != null && doc.exists) {
+      // 3. Search Mode
+      if (data['notFound'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Yarn not found in database'), backgroundColor: Colors.red),
+        );
+        _resetScan();
+      } else {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => YarnDetailPage(
-              qr: value,
-              data: doc.data() as Map<String, dynamic>,
-            ),
+            builder: (_) => YarnDetailPage(qr: value, data: data),
           ),
-        ).then((_) => _scanNext());
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Invalid QR: "$value"'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'INFO',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
-          ),
-        );
-        _scanNext();
+        ).then((_) => _resetScan());
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    } finally {
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  void _resetScan() {
+    setState(() {
+      pendingData = null;
+      pendingQr = null;
+      isScanning = true;
+    });
+    controller?.start();
   }
 
   void _scanNext() {
@@ -182,7 +229,7 @@ class _ScanCodePageState extends State<ScanCodePage> {
           ),
 
           // Custom Glassmorphism-style Overlay
-          _buildScannerOverlay(context),
+          if (pendingData == null) _buildScannerOverlay(context),
 
           // Top Header
           Positioned(
@@ -223,6 +270,9 @@ class _ScanCodePageState extends State<ScanCodePage> {
             ),
           ),
 
+          // Scanned Data Preview Overlay
+          if (pendingData != null) _buildDataPreview(context),
+
           // Loading Indicator
           if (isLoading)
             Container(
@@ -234,7 +284,7 @@ class _ScanCodePageState extends State<ScanCodePage> {
                     CircularProgressIndicator(color: Colors.white),
                     SizedBox(height: 16),
                     Text(
-                      'Checking Yarn Database...',
+                      'Processing...',
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ],
@@ -244,6 +294,161 @@ class _ScanCodePageState extends State<ScanCodePage> {
         ],
       ),
     );
+  }
+
+  Widget _buildDataPreview(BuildContext context) {
+    final data = pendingData!;
+    final isNotFound = data['notFound'] == true;
+    final yarnId = data['id'] ?? 'Unknown ID';
+    
+    String confirmMsg = 'Proceed with action?';
+    if (widget.isAddMode) confirmMsg = 'Add this yarn to inventory?';
+    else if (widget.expectedQr != null) confirmMsg = 'Confirm verification?';
+    else confirmMsg = 'View details?';
+
+    return Container(
+      color: Colors.black87,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(color: Colors.white.withOpacity(0.1), blurRadius: 20),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      isNotFound ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+                      size: 64,
+                      color: isNotFound ? Colors.orange : Colors.deepPurple,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      yarnId,
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isNotFound ? 'New Yarn detected' : 'Existing Yarn found',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    ),
+                    const Divider(height: 32),
+                    Table(
+                      columnWidths: const {
+                        0: IntrinsicColumnWidth(),
+                        1: FlexColumnWidth(),
+                      },
+                      children: data.entries
+                          .where((e) => !['notFound', 'status', 'createdAt', 'rawQr', 'id', 'qrimage'].contains(e.key.toLowerCase()))
+                          .where((e) => e.value.toString().toLowerCase() != 'unknown') // Filter out unknown values
+                          .map((e) => TableRow(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8, bottom: 8, right: 16),
+                                child: Text(
+                                  _capitalize(e.key),
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  e.value.toString(),
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ))
+                          .toList(),
+                    ),
+                    
+                    if (widget.isAddMode) ...[
+                      const Divider(height: 32),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.deepPurple.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text(
+                              'Assigned ID:',
+                              style: TextStyle(fontWeight: FontWeight.w600, color: Colors.deepPurple),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Auto-Generated (YR-XXXXX)',
+                                textAlign: TextAlign.right,
+                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+                    Text(
+                      confirmMsg,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: _resetScan,
+                            child: const Text('RE-SCAN', style: TextStyle(color: Colors.grey)),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _confirmAction,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isNotFound && !widget.isAddMode ? Colors.grey : Colors.deepPurple,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text(isNotFound && !widget.isAddMode ? 'NOT FOUND' : 'CONFIRM'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s.replaceAll('_', ' ').split(' ').map((str) => str.isNotEmpty ? '${str[0].toUpperCase()}${str.substring(1)}' : '').join(' ');
   }
 
   Widget _buildScannerOverlay(BuildContext context) {

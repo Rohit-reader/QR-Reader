@@ -110,6 +110,23 @@ class WelcomePage extends StatelessWidget {
                     color: const Color(0xFF00BFA5),
                     onTap: () => Navigator.pushNamed(context, '/dispatch'),
                   ),
+                  const SizedBox(height: 20),
+                  _buildMenuCard(
+                    context,
+                    title: 'Add Yarn',
+                    subtitle: 'Scan QR to add yarn to inventory',
+                    icon: Icons.qr_code_scanner,
+                    color: Colors.orange,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ScanCodePage(
+                          title: 'Add New Yarn',
+                          isAddMode: true,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

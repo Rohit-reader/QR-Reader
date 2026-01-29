@@ -104,13 +104,120 @@ class YarnService {
     });
   }
 
-  Future<void> addYarn(String qr, Map<String, dynamic> data) {
+  Future<void> addYarn(String qr, Map<String, dynamic> data) async {
+    // Generate a unique sequential ID if not already providing a system ID
+    String systemId = await _generateUniqueYarnId();
+    
+    // Use the parsed 'id' as 'originalId' for reference, and systemId as the primary tracking ID
+    final docId = systemId; 
+    
+    // Filter out fields with "unknown" values (case-insensitive)
+    final filteredData = Map<String, dynamic>.from(data);
+    filteredData.removeWhere((key, value) => 
+      value.toString().toLowerCase() == 'unknown'
+    );
+    
     // We also store the raw QR inside the document for reference
     final fullData = {
-      ...data,
+      ...filteredData,
       'rawQr': qr.trim(),
+      'id': systemId, 
+      'originalQrId': data['id'],
+      'createdAt': FieldValue.serverTimestamp(),
     };
-    return _db.collection('yarnRolls').doc(_getSafeId(qr)).set(fullData);
+    return _db.collection('yarnRolls').doc(docId).set(fullData);
+  }
+
+  Future<String> _generateUniqueYarnId() async {
+    try {
+      // Query the collection for the latest YR-XXXXX ID
+      final snapshot = await _db.collection('yarnRolls')
+          .where('id', isGreaterThanOrEqualTo: 'YR-00000')
+          .where('id', isLessThanOrEqualTo: 'YR-99999')
+          .orderBy('id', descending: true)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return 'YR-00001';
+      }
+
+      final lastId = snapshot.docs.first.get('id') as String;
+      final numericPart = int.parse(lastId.replaceFirst('YR-', ''));
+      final nextNumber = numericPart + 1;
+      
+      return 'YR-${nextNumber.toString().padLeft(5, '0')}';
+    } catch (e) {
+      print('Error generating unique ID: $e');
+      // Fallback to timestamp based ID if query fails to avoid blocking
+      return 'YR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    }
+  }
+
+  Map<String, dynamic> parseYarnData(String qr) {
+    final raw = qr.trim();
+    Map<String, dynamic> data = {};
+    
+    // Try parsing as JSON first
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is Map<String, dynamic>) {
+        // Iterate over all keys to normalize and capture everything
+        decoded.forEach((key, value) {
+          final kLower = key.toString().trim().toLowerCase();
+          if (kLower.isEmpty) return; // Skip empty keys
+          
+          // Add original pair
+          data[key] = value;
+          
+          // Normalized mapping
+          if (key.contains('Material') || kLower == 'material') data['material'] = value;
+          if (key.contains('Type') || kLower == 'type' || kLower == 'yarntype') data['type'] = value; 
+          if (key.contains('Bin') || kLower == 'bin') data['bin'] = value;
+          if (key.contains('Rack') || kLower == 'rack') data['rack'] = value;
+          
+          // Specific requested fields
+          if (kLower.contains('rack') && kLower.contains('id')) data['rack_id'] = value;
+          if (kLower.contains('yarn') && kLower.contains('count')) data['yarn_count'] = value;
+          if (kLower.contains('yarn') && kLower.contains('type')) data['yarn_type'] = value;
+          if (kLower == 'id' || kLower == 'yarnid') data['id'] = value;
+        });
+        
+        return data;
+      }
+    } catch (_) {}
+
+    // Fallback: Try Key-Value pairs with common delimiters
+    final pairs = raw.split(RegExp(r'[,|;\n]'));
+    bool foundAnyKv = false;
+    for (var pair in pairs) {
+      final kv = pair.split(RegExp(r'[:=]'));
+      if (kv.length == 2) {
+        final key = kv[0].trim().toLowerCase();
+        if (key.isEmpty) continue; // Skip empty keys
+        
+        final value = kv[1].trim();
+        data[key] = value;
+        foundAnyKv = true;
+
+        if (key.contains('id') && !key.contains('rack')) data['id'] = value;
+        if (key.contains('mat') || key.contains('material')) data['material'] = value;
+        if (key.contains('type') && !key.contains('yarn')) data['type'] = value;
+        if (key.contains('bin')) data['bin'] = value;
+        if (key.contains('rack') && !key.contains('id')) data['rack'] = value;
+        
+        // Specific requested fields
+        if (key.contains('rack') && key.contains('id')) data['rack_id'] = value;
+        if (key.contains('yarn') && key.contains('count')) data['yarn_count'] = value;
+        if (key.contains('yarn') && key.contains('type')) data['yarn_type'] = value;
+      }
+    }
+
+    if (data['id'] == null && !foundAnyKv && raw.length > 2) {
+      data['id'] = raw;
+    }
+
+    return data;
   }
 
   Future<void> deleteYarn(String qr) {
