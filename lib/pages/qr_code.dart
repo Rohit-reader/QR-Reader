@@ -33,7 +33,7 @@ class _ScanCodePageState extends State<ScanCodePage> {
     super.initState();
     controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
-      returnImage: true, // Enable image capture for QR storage
+      returnImage: false,
     );
   }
 
@@ -50,7 +50,6 @@ class _ScanCodePageState extends State<ScanCodePage> {
     if (rawValue == null || rawValue.trim().isEmpty) return;
 
     final value = rawValue.trim();
-    final qrImage = capture.image; // Capture QR image
 
     setState(() {
       isLoading = true;
@@ -62,10 +61,6 @@ class _ScanCodePageState extends State<ScanCodePage> {
 
       if (widget.isAddMode) {
         data = yarnService.parseYarnData(value);
-        // Store QR image as base64 if available
-        if (qrImage != null) {
-          data['qrImage'] = Blob(qrImage);
-        }
       } else {
         final doc = await yarnService.findYarnByContent(value);
         if (doc != null && doc.exists) {

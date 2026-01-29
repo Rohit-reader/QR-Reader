@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/yarn_service.dart';
 
 class YarnDetailPage extends StatelessWidget {
@@ -74,6 +76,57 @@ class YarnDetailPage extends StatelessWidget {
                 ],
               ),
             ),
+            
+            // QR Code Image Section
+            if (data['qrImage'] != null) ...[
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Builder(
+                  builder: (context) {
+                    try {
+                      final dynamic imgData = data['qrImage'];
+                      Uint8List? bytes;
+                      
+                      if (imgData is Blob) {
+                        bytes = imgData.bytes;
+                      } else if (imgData is Uint8List) {
+                        bytes = imgData;
+                      } else if (imgData is List<int>) {
+                        bytes = Uint8List.fromList(imgData);
+                      }
+
+                      if (bytes != null) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            bytes,
+                            width: 150,
+                            height: 150,
+                            fit: BoxFit.cover,
+                          ),
+                        );
+                      }
+                      return const SizedBox();
+                    } catch (e) {
+                      return const Icon(Icons.broken_image, size: 50, color: Colors.grey);
+                    }
+                  },
+                ),
+              ),
+            ],
+
 
             Padding(
               padding: const EdgeInsets.all(24.0),
