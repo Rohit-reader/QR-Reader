@@ -76,6 +76,44 @@ class YarnService {
     await _db.collection('reserved_collection').doc(docId).delete();
   }
 
+  // ================= NEW SCAN & VERIFIED FEATURE =================
+
+  /// ✅ Mark yarn as scanned
+  Future<void> markAsScanned(String docId) async {
+    await _db.collection('reserved_collection').doc(docId).update({
+      'is_scanned': true,
+      'scanned_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// ✅ Mark yarn as verified
+  Future<void> markAsVerified(String docId) async {
+    await _db.collection('reserved_collection').doc(docId).update({
+      'state': 'VERIFIED',
+      'is_scanned': true,
+      'verified_at': FieldValue.serverTimestamp(),
+      'last_state_change': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// ✅ Check if already scanned or verified (prevents duplicate scans)
+  Future<bool> isAlreadyScanned(String docId) async {
+    final doc = await _db.collection('reserved_collection').doc(docId).get();
+    if (!doc.exists) return false;
+    final data = doc.data();
+    return (data?['is_scanned'] ?? false) || (data?['state'] == 'VERIFIED');
+  }
+
+  /// 🔁 OPTIONAL: Reset scan (undo feature)
+  Future<void> resetScan(String docId) async {
+    await _db.collection('reserved_collection').doc(docId).update({
+      'is_scanned': false,
+      'scanned_at': null,
+      'state': 'RESERVED',
+      'last_state_change': FieldValue.serverTimestamp(),
+    });
+  }
+
   // ================= ADD YARN =================
 
   Future<void> addYarn(String qr, Map<String, dynamic> data) async {
@@ -120,18 +158,17 @@ class YarnService {
     try {
       final decoded = json.decode(trimmed);
       if (decoded is Map<String, dynamic>) {
-        // Convert all keys to readable format
         final Map<String, dynamic> humanReadable = {};
         decoded.forEach((key, value) {
-          if (value != null && value.toString().toLowerCase() != 'unknown') {
+          if (value != null &&
+              value.toString().toLowerCase() != 'unknown') {
             humanReadable[_capitalizeKey(key)] = value;
           }
         });
         return humanReadable.isEmpty ? {'ID': trimmed} : humanReadable;
       }
-    } catch (_) {
-      // Not JSON? Treat as plain QR code
-    }
+    } catch (_) {}
+
     return {'ID': trimmed};
   }
 

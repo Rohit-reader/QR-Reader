@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import './yarn_detail_page.dart';
 
 class ScanCodePage extends StatefulWidget {
@@ -66,7 +67,26 @@ class _ScanCodePageState extends State<ScanCodePage>
     super.dispose();
   }
 
-  void _handleScan(BarcodeCapture capture) {
+  // 🔥 UPDATE FIRESTORE AFTER SCAN
+  Future<void> _markAsScanned(String qr) async {
+    final query = await FirebaseFirestore.instance
+        .collection('reserved_collection')
+        .where('id', isEqualTo: qr)
+        .limit(1)
+        .get();
+
+    if (query.docs.isNotEmpty) {
+      final docRef = query.docs.first.reference;
+      await docRef.update({
+        'state': 'VERIFIED',
+        'is_scanned': true,
+        'verified_at': FieldValue.serverTimestamp(),
+        'last_state_change': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  void _handleScan(BarcodeCapture capture) async {
     if (!isScanning || isLoading) return;
 
     final rawValue = capture.barcodes.first.rawValue;
@@ -77,9 +97,16 @@ class _ScanCodePageState extends State<ScanCodePage>
     setState(() {
       scannedQr = rawValue.trim();
       isScanning = false;
-      isLoading = false;
+      isLoading = true; // show loader during Firestore update
     });
     controller?.stop();
+
+    // 🔥 Firestore update
+    await _markAsScanned(scannedQr!);
+
+    setState(() {
+      isLoading = false;
+    });
 
     Navigator.push(
       context,
@@ -114,7 +141,6 @@ class _ScanCodePageState extends State<ScanCodePage>
             onDetect: _handleScan,
           ),
           _buildScannerOverlay(context),
-          // Scanning laser line
           Center(
             child: SizedBox(
               height: scanAreaSize,
@@ -175,7 +201,6 @@ class _ScanCodePageState extends State<ScanCodePage>
   }
 }
 
-// Custom painter for the scanning laser
 class _LaserPainter extends CustomPainter {
   final double progress;
 

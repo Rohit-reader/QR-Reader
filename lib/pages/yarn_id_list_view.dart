@@ -63,106 +63,131 @@ class _YarnIdListViewState extends State<YarnIdListView> {
   Widget build(BuildContext context) {
     final YarnService yarnService = YarnService();
 
-    // ✅ FILTER
-    var filteredDocs = widget.docs.where((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      final id = (data['id'] ?? doc.id).toString().toLowerCase();
-      return id.contains(widget.searchQuery.toLowerCase());
-    }).toList();
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('reserved_collection')
+          .snapshots(), // 🔥 REAL-TIME FIX
+      builder: (context, snapshot) {
 
-    // ✅ SORT
-    filteredDocs = _sortDocs(filteredDocs);
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    if (filteredDocs.isEmpty) {
-      return const Center(child: Text("No Data"));
-    }
+        var docs = snapshot.data!.docs;
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: filteredDocs.length,
-      itemBuilder: (_, index) {
-        final doc = filteredDocs[index];
-        final data = doc.data() as Map<String, dynamic>;
+        // ✅ FILTER (same logic)
+        var filteredDocs = docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final id = (data['id'] ?? doc.id).toString().toLowerCase();
+          return id.contains(widget.searchQuery.toLowerCase());
+        }).toList();
 
-        final yarnId = data['id'] ?? doc.id;
-        final supplier = data['supplier_name'] ?? 'Unknown';
+        // ✅ SORT (same logic)
+        filteredDocs = _sortDocs(filteredDocs);
 
-        return GestureDetector(
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 14),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.white, Color(0xFFF9FAFB)],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 6),
-                )
-              ],
-            ),
-            child: Row(
-              children: [
+        if (filteredDocs.isEmpty) {
+          return const Center(child: Text("No Data"));
+        }
 
-                // 📦 ICON
-                Container(
-                  padding: const EdgeInsets.all(12),
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: filteredDocs.length,
+          itemBuilder: (_, index) {
+            final doc = filteredDocs[index];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final yarnId = data['id'] ?? doc.id;
+            final supplier = data['supplier_name'] ?? 'Unknown';
+
+            // ✅ LIVE VALUE (FIXED)
+            final isScanned = data['is_scanned'] ?? false;
+
+            return GestureDetector(
+              child: Opacity(
+                opacity: isScanned ? 0.6 : 1,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    gradient: const LinearGradient(
+                      colors: [Colors.white, Color(0xFFF9FAFB)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: isScanned
+                        ? Border.all(color: Colors.blue, width: 1)
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      )
+                    ],
                   ),
-                  child: const Icon(Icons.inventory_2, color: Colors.green),
-                ),
-
-                const SizedBox(width: 16),
-
-                // 📄 DETAILS
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        yarnId.toString(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black, // yarn id text color
+
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.inventory_2,
+                          color: isScanned ? Colors.blue : Colors.green,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        supplier,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
+
+                      const SizedBox(width: 16),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              yarnId.toString(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              supplier,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: isScanned
+                              ? Colors.blue.withOpacity(0.15)
+                              : Colors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          isScanned ? "SCANNED" : "RESERVED",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isScanned ? Colors.blue : Colors.green,
+                          ),
+                        ),
+                      )
                     ],
                   ),
                 ),
-
-                // 🟢 STATUS
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    "RESERVED",
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.green,
-                    ),
-                  ),
-                )
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/yarn_service.dart';
-import './qr_code.dart';
 import './reserved_yarn_details_page.dart';
+import './verify_qr_page.dart';
 
 class CompanyYarnListPage extends StatefulWidget {
   final String companyName;
@@ -22,7 +22,10 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
     with SingleTickerProviderStateMixin {
   final YarnService yarnService = YarnService();
   late AnimationController _controller;
-  String? _ackMessage; // Acknowledgment message after deletion
+  String? _ackMessage;
+
+  // ✅ LOCAL CACHE (to track verified scans locally)
+  final Map<String, bool> _localScanState = {};
 
   @override
   void initState() {
@@ -39,7 +42,7 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
     super.dispose();
   }
 
-  // ✅ Updated delete confirmation dialog
+  // ✅ CONFIRM DELETE FUNCTION
   Future<bool> _confirmDelete(BuildContext context, String yarnId) async {
     final controller = TextEditingController();
     final result = await showDialog<bool>(
@@ -55,22 +58,14 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                "Confirm Delete",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              const Text("Confirm Delete",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              Text(
-                "Yarn ID: $yarnId",
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                ),
-              ),
+              Text("Yarn ID: $yarnId",
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87)),
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
@@ -80,8 +75,6 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                   border: InputBorder.none,
                   filled: true,
                   fillColor: Color(0xFFF5F5F5),
-                  contentPadding:
-                  EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 ),
               ),
               const SizedBox(height: 20),
@@ -89,7 +82,7 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                 children: [
                   Expanded(
                     child: InkWell(
-                      onTap: () => Navigator.pop(context, false),
+                      onTap: () => Navigator.of(context).pop(false),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -97,22 +90,12 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                           gradient: const LinearGradient(
                               colors: [Colors.orange, Colors.deepOrange]),
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.orangeAccent.withOpacity(0.5),
-                              blurRadius: 10,
-                              spreadRadius: 1,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
-                          "Cancel",
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold),
-                        ),
+                        child: const Text("Cancel",
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
@@ -121,12 +104,11 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                     child: InkWell(
                       onTap: () {
                         if (controller.text.trim() == yarnId) {
-                          Navigator.pop(context, true);
+                          Navigator.of(context).pop(true);
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Yarn ID does not match!"),
-                            ),
+                                content: Text("Yarn ID does not match!")),
                           );
                         }
                       },
@@ -137,22 +119,12 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                           gradient: const LinearGradient(
                               colors: [Colors.red, Colors.redAccent]),
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.redAccent.withOpacity(0.5),
-                              blurRadius: 10,
-                              spreadRadius: 1,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
-                          "Delete",
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold),
-                        ),
+                        child: const Text("Delete",
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
@@ -169,7 +141,6 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
   @override
   Widget build(BuildContext context) {
     final primaryColor = Colors.green;
-
     _controller.forward(from: 0);
 
     return Scaffold(
@@ -192,6 +163,13 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
               final yarnId = data['id'] ?? data['yarnId'] ?? doc.id;
               final supplier = data['supplier_name'] ?? 'Unknown';
 
+              final state = data['state'] ?? 'RESERVED';
+              final isVerified = state == 'VERIFIED';
+              final isScanned =
+              state == 'VERIFIED'
+                  ? true // Treat as verified, not scanned locally
+                  : _localScanState[doc.id] ?? (data['is_scanned'] ?? false);
+
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: Dismissible(
@@ -199,38 +177,66 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                   background: _swipeLeft(),
                   secondaryBackground: _swipeRight(),
                   confirmDismiss: (direction) async {
+                    // 👉 SCAN / VERIFY (left swipe)
                     if (direction == DismissDirection.startToEnd) {
-                      final scan = await Navigator.push(
-                        context,
+                      if (isVerified || isScanned) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Already Verified")),
+                        );
+                        return false;
+                      }
+
+                      final alreadyScanned =
+                      await yarnService.isAlreadyScanned(doc.id);
+
+                      if (alreadyScanned) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Already Verified")),
+                        );
+                        return false;
+                      }
+
+                      final scan = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
-                          builder: (_) => ScanCodePage(
-                            expectedQr: supplier.toString(),
-                            title: 'Verify - $yarnId',
+                          builder: (_) => VerifyQRPage(
+                            expectedQr: yarnId.toString(),
+                            yarnId: yarnId.toString(),
                           ),
                         ),
                       );
 
                       if (scan == true) {
-                        await yarnService.updateYarnStatus(doc.id, 'moved');
+                        await yarnService.markAsVerified(doc.id);
+                        setState(() {
+                          _localScanState[doc.id] = true;
+                        });
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Verified Successfully")),
+                        );
                       }
+
                       return false;
-                    } else {
-                      final confirmed =
-                      await _confirmDelete(context, yarnId.toString());
+                    }
+                    // 👉 DELETE (right swipe)
+                    else {
+                      // Only allow deletion after confirmation
+                      final confirmed = await _confirmDelete(context, yarnId.toString());
+
                       if (confirmed) {
+                        // Delete yarn from Firestore, regardless of verified/reserved
                         await yarnService.deleteReservedYarnById(doc.id);
                         setState(() {
                           _ackMessage = "Deleted $yarnId";
                         });
                       }
-                      return confirmed;
+                      return false; // return false so Dismissible does NOT remove item locally
                     }
                   },
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () {
-                      Navigator.push(
-                        context,
+                      Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ReservedYarnDetailsPage(
                             docId: doc.id,
@@ -239,67 +245,79 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
                         ),
                       );
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: primaryColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
+                    child: Opacity(
+                      opacity: isVerified || isScanned ? 0.6 : 1,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: isVerified || isScanned
+                              ? Border.all(color: Colors.blue)
+                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isVerified
+                                    ? Colors.blue.withOpacity(0.1)
+                                    : primaryColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.inventory_2,
+                                color: isVerified ? Colors.blue : primaryColor,
+                              ),
                             ),
-                            child: Icon(Icons.inventory_2,
-                                color: primaryColor),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  yarnId.toString(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    yarnId.toString(),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  supplier,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600]),
-                                ),
-                              ],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    supplier,
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600]),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              "RESERVED",
-                              style: TextStyle(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: isVerified
+                                    ? Colors.blue.withOpacity(0.15)
+                                    : Colors.grey.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                isVerified ? "VERIFIED" : "RESERVED",
+                                style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.green),
-                            ),
-                          )
-                        ],
+                                  color: isVerified ? Colors.blue : Colors.green,
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -307,7 +325,6 @@ class _CompanyYarnListPageState extends State<CompanyYarnListPage>
               );
             },
           ),
-          // ✅ Acknowledgment box at bottom
           if (_ackMessage != null)
             Align(
               alignment: Alignment.bottomCenter,
